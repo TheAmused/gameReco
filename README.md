@@ -5,6 +5,8 @@ Aplikacja webowa napisana w języku **Python (Flask)**, wykorzystująca algorytm
 
 Model analizuje tagi oraz gatunki gier, w które użytkownik grał najdłużej, buduje wektor profilu gracza za pomocą algorytmu **TF-IDF**, a następnie przy użyciu **podobieństwa kosinusowego (Cosine Similarity)** dopasowuje najlepiej pasujące, nieposiadane jeszcze gry z obszernej bazy danych.
 
+Szczegolowa dokumentacja matematyczna i techniczna znajduje sie tutaj: [DOKUMENTACJA_MATEMATYCZNA.md](DOKUMENTACJA_MATEMATYCZNA.md)
+
 ---
 
 ## 🚀 Instrukcja uruchomienia (krok po kroku)
