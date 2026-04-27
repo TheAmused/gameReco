@@ -4,6 +4,7 @@ from flask import Flask, render_template, request
 import requests
 import pandas as pd
 import numpy as np
+from collections import Counter
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
@@ -53,6 +54,8 @@ for appID_str, game in dataset.items():
                 'appid': appID,
                 'name': name,
                 'features': combined_features,
+                'tags_list': tags_list,
+                'genres_list': genres_raw if isinstance(genres_raw, list) else [],
                 'header_image': game.get('header_image', ''),
                 'short_desc': game.get('short_description', ''),
                 'price': game.get('price', 0.0),
@@ -112,30 +115,97 @@ def recommend():
 
     user_profile = np.asarray(tfidf_matrix[user_indices].mean(axis=0))
 
-    similarities = cosine_similarity(user_profile, tfidf_matrix)
-    
-    similar_indices = similarities.argsort()[0][::-1]
+    similarities = cosine_similarity(user_profile, tfidf_matrix).flatten()
+    similar_indices_cosine = similarities.argsort()[::-1]
 
-    recommendations =[]
-    for idx in similar_indices:
+    recommendations_cosine = []
+    for idx in similar_indices_cosine:
         game_appid = df_games.iloc[idx]['appid']
-        
+
         if game_appid not in owned_appids:
-            recommendations.append({
+            recommendations_cosine.append({
                 'name': df_games.iloc[idx]['name'],
                 'header_image': df_games.iloc[idx]['header_image'],
                 'short_desc': df_games.iloc[idx]['short_desc'],
                 'price': df_games.iloc[idx]['price'],
                 'tags': df_games.iloc[idx]['display_tags'],
-                'similarity': round(similarities[0][idx] * 100, 1)
+                'similarity': round(similarities[idx] * 100, 1)
             })
-        
-        if len(recommendations) >= 6: 
+
+        if len(recommendations_cosine) >= 6:
+            break
+
+    selected_games_df = df_games.loc[user_indices]
+
+    user_tag_counter = Counter()
+    user_genre_counter = Counter()
+    user_feature_set = set()
+
+    for _, row in selected_games_df.iterrows():
+        for tag in row['tags_list']:
+            normalized_tag = str(tag).strip().lower()
+            if normalized_tag:
+                user_tag_counter[normalized_tag] += 1
+                user_feature_set.add(normalized_tag)
+
+        for genre in row['genres_list']:
+            normalized_genre = str(genre).strip().lower()
+            if normalized_genre:
+                user_genre_counter[normalized_genre] += 1
+                user_feature_set.add(normalized_genre)
+
+    jaccard_scores = np.zeros(len(df_games), dtype=float)
+    for idx, row in df_games.iterrows():
+        game_feature_set = set()
+
+        for tag in row['tags_list']:
+            normalized_tag = str(tag).strip().lower()
+            if normalized_tag:
+                game_feature_set.add(normalized_tag)
+
+        for genre in row['genres_list']:
+            normalized_genre = str(genre).strip().lower()
+            if normalized_genre:
+                game_feature_set.add(normalized_genre)
+
+        union_size = len(user_feature_set | game_feature_set)
+        if union_size > 0:
+            intersection_size = len(user_feature_set & game_feature_set)
+            jaccard_scores[idx] = intersection_size / union_size
+
+    similar_indices_alt = jaccard_scores.argsort()[::-1]
+
+    recommendations_alt = []
+    for idx in similar_indices_alt:
+        game_appid = df_games.iloc[idx]['appid']
+
+        if game_appid not in owned_appids:
+            recommendations_alt.append({
+                'name': df_games.iloc[idx]['name'],
+                'header_image': df_games.iloc[idx]['header_image'],
+                'short_desc': df_games.iloc[idx]['short_desc'],
+                'price': df_games.iloc[idx]['price'],
+                'tags': df_games.iloc[idx]['display_tags'],
+                'jaccard': round(jaccard_scores[idx] * 100, 1)
+            })
+
+        if len(recommendations_alt) >= 6:
             break
 
     favorite_games_info =[{'name': g['name'], 'playtime_hours': round(g['playtime_forever']/60, 1)} for g in top_10_games[:5]]
 
-    return render_template('results.html', recommendations=recommendations, favorite_games=favorite_games_info)
+    search_details = {
+        'tags': [{'name': k, 'count': v} for k, v in user_tag_counter.most_common()],
+        'genres': [{'name': k, 'count': v} for k, v in user_genre_counter.most_common()]
+    }
+
+    return render_template(
+        'results.html',
+        recommendations_cosine=recommendations_cosine,
+        recommendations_alt=recommendations_alt,
+        favorite_games=favorite_games_info,
+        search_details=search_details
+    )
 
 if __name__ == '__main__':
     app.run(debug=True)
