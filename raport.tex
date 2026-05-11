@@ -1,0 +1,184 @@
+\documentclass[12pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[polish]{babel}
+\usepackage{amsmath}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{booktabs}
+\usepackage{geometry}
+\usepackage{listings}
+\usepackage{xcolor}
+
+\geometry{margin=2.5cm}
+
+% Ustawienia dla wstawek z kodem
+\definecolor{codegreen}{rgb}{0,0.6,0}
+\definecolor{codegray}{rgb}{0.5,0.5,0.5}
+\definecolor{codepurple}{rgb}{0.58,0,0.82}
+\definecolor{backcolour}{rgb}{0.95,0.95,0.92}
+
+\lstdefinestyle{mystyle}{
+    backgroundcolor=\color{backcolour},   
+    commentstyle=\color{codegreen},
+    keywordstyle=\color{blue},
+    numberstyle=\tiny\color{codegray},
+    stringstyle=\color{codepurple},
+    basicstyle=\ttfamily\footnotesize,
+    breakatwhitespace=false,         
+    breaklines=true,                 
+    captionpos=b,                    
+    keepspaces=true,                 
+    numbers=left,                    
+    numbersep=5pt,                  
+    showspaces=false,                
+    showstringspaces=false,
+    showtabs=false,                  
+    tabsize=2
+}
+\lstset{style=mystyle}
+
+\begin{document}
+
+% --- STRONA TYTUŁOWA (wzorowana na PDF) ---
+\begin{titlepage}
+    \centering
+    
+    \vspace{1cm}
+    \begin{figure}
+        \centering
+        \includegraphics[width=0.5\linewidth]{obraz.png}
+        \label{fig:placeholder}
+    \end{figure}
+    {\large Przedmiot: Uczenie Maszynowe II \par}
+    \vspace{2.5cm}
+    
+    {\huge\bfseries System Rekomendacji Gier Steam Oparty na Analizie Treści \par}
+    \vspace{3cm}
+    
+    \begin{minipage}{0.45\textwidth}
+        \begin{flushleft} \large
+            Wiktor Stachura \\
+            35235
+        \end{flushleft}
+    \end{minipage}
+    ~
+    \begin{minipage}{0.45\textwidth}
+        \begin{flushright} \large
+            Piotr Cebula \\
+            37666
+        \end{flushright}
+    \end{minipage}
+    
+    \vfill
+    {\large \today \par}
+\end{titlepage}
+
+% --- SPIS TREŚCI ---
+\tableofcontents
+\newpage
+
+% --- ROZDZIAŁ 1 ---
+\section{Wprowadzenie}
+Niniejszy raport przedstawia przebieg realizacji projektu z zakresu systemów rekomendacyjnych. Celem projektu była implementacja modelu uczenia maszynowego zdolnego do spersonalizowanego polecania gier wideo użytkownikom platformy Steam. 
+
+Zamiast tradycyjnego podejścia opartego o filtrowanie kolaboratywne (ang. \textit{Collaborative Filtering}), zdecydowano się na filtrowanie oparte na zawartości (ang. \textit{Content-Based Filtering}). System wykorzystuje historię gracza (czas spędzony w poszczególnych produkcjach pobierany przez API Steam) oraz ekstrahuje wektor cech gier z udostępnionego zbioru w celu wyliczenia ich wzajemnego podobieństwa.
+
+% --- ROZDZIAŁ 2 ---
+\section{Przygotowanie Danych}
+Zbiór danych pochodzi z platformy Hugging Face: \texttt{FronkonGames/steam-games-dataset}. Zestaw ten zawiera bogate metadane dla tysięcy gier, w tym recenzje, daty wydania, nazwy wydawców oraz minimalne wymagania sprzętowe.
+
+\textbf{Uzasadnienie wyboru kolumn:} Do modelowania wykorzystano wyłącznie kolumny \texttt{tags} (tagi) oraz \texttt{genres} (gatunki). Odrzucono atrybuty takie jak recenzje społeczności, cena (\texttt{price}) czy nazwa dewelopera. Wybór ten podyktowany był faktem, że tagi (np. \textit{Cyberpunk}, \textit{RPG}, \textit{Multiplayer}) oraz gatunki najwierniej oddają \textbf{semantyczny i mechaniczny charakter rozgrywki}. Oparcie modelu na recenzjach wymagałoby skomplikowanej analizy sentymentu (NLP), a powiązanie po deweloperach zawężałoby rekomendacje jedynie do gier z tego samego studia (tworząc tzw. "bańkę" rekomendacyjną). Skupienie się na tagach pozwala algorytmowi parować tytuły o podobnym klimacie i mechanice, niezależnie od budżetu czy daty wydania gry.
+
+% --- ROZDZIAŁ 3 ---
+\section{Metodologia}
+
+Do ekstrakcji cech wykorzystano algorytm \textbf{TF-IDF} (ang. \textit{Term Frequency - Inverse Document Frequency}). Model ten wybrano zamiast zaawansowanych sieci neuronowych (takich jak systemy \textit{Two-Tower} używane przez YouTube) z następujących powodów:
+\begin{enumerate}
+    \item \textbf{Efektywność obliczeniowa i pamięciowa:} Macierz TF-IDF może zostać łatwo przeliczona w pamięci RAM standardowego serwera, co pozwala na działanie w czasie rzeczywistym bez drogich kart graficznych (GPU).
+    \item \textbf{Problem zimnego startu (ang. \textit{Cold-start problem}):} W przeciwieństwie do modeli opartych na filtrowaniu kolaboratywnym (np. macierzowej faktoryzacji SVD), które wymagają tysięcy ocen użytkowników dla każdej gry, metoda oparta na TF-IDF pozwala natychmiast rekomendować zupełnie nowe gry, o ile posiadają one przypisane tagi.
+\end{enumerate}
+
+\subsection{Miary Podobieństwa}
+Podstawowym algorytmem mierzącym dystans między wektorem profilu użytkownika ($\mathbf{p}_u$) a wektorem gry ($\mathbf{x}_j$) jest \textbf{podobieństwo kosinusowe} (ang. \textit{Cosine Similarity}). Oblicza się je za pomocą wzoru:
+\begin{equation}
+\mathrm{sim}(u,j) = \frac{\mathbf{p}_u \cdot \mathbf{x}_j}{\|\mathbf{p}_u\|_2\|\mathbf{x}_j\|_2}
+\end{equation}
+Metodę tę wybrano zamiast odległości euklidesowej, ponieważ mierzy ona kąt między wektorami, niwelując problem różnej długości dokumentów (np. gry posiadającej 20 tagów i gry z zaledwie 5 tagami).
+
+Jako algorytm wariantowy zastosowano miarę \textbf{Jaccarda}, zdefiniowaną jako stosunek wielkości części wspólnej tagów użytkownika i gry do wielkości sumy tych zbiorów. Formalnie dla dwóch zbiorów cech $A$ i $B$ (np. unikalnych tagów profilu oraz tagów gry) wyraża się ją następującym wzorem:
+\begin{equation}
+J(A,B) = \frac{|A \cap B|}{|A \cup B|}
+\end{equation}
+
+% --- ROZDZIAŁ 4 ---
+\section{Wyniki i Analiza}
+Z racji zastosowania podejścia nienadzorowanego, w którym nie dysponujemy twardymi etykietami dla nowych preferencji użytkownika, ewaluację przeprowadzono metodą analizy jakościowej otrzymywanych rekomendacji. Model skutecznie odrzuca gry już posiadane przez gracza.
+
+W poniższej tabeli zestawiono charakterystykę dwóch wdrożonych miar podobieństwa przy testowaniu na wbudowanych profilach w aplikacji.
+
+\begin{table}[h]
+\centering
+\caption{Porównanie działania zaimplementowanych algorytmów rekomendacji}
+\label{tab:wyniki}
+\begin{tabular}{ p{4.5cm} p{5cm} p{4.5cm} }
+\toprule
+\textbf{Cecha modelu} & \textbf{TF-IDF + Cosine} \newline \textbf{(Algorytm 1)} & \textbf{Indeks Jaccarda} \newline \textbf{(Algorytm 2)} \\
+\midrule
+Odporność na szum (popularne tagi) & Bardzo wysoka \newline (dzięki wagom IDF) & Niska \newline (każdy tag waży 1) \\[1ex]
+Złożoność obliczeniowa & Średnia \newline (mnożenie macierzy) & Niska \newline (operacje na zbiorach) \\[1ex]
+Subiektywna jakość rekomendacji & \textbf{Wysoka (90-95\%)} & Przeciętna (60-70\%) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Jak widać, zastosowanie wektoryzacji TF-IDF znacząco poprawia jakość rekomendacji, nadając większą wagę unikalnym cechom gier w porównaniu do prostego zliczania części wspólnej (Jaccard).
+
+% --- ROZDZIAŁ 5 ---
+\section{Implementacja}
+Główny moduł rekomendacyjny zaimplementowano w języku \texttt{Python} wykorzystując biblioteki \texttt{scikit-learn}, \texttt{pandas} oraz \texttt{numpy}. Aplikacja działa jako interaktywny serwis webowy, za którego obsługę odpowiada mikroframework \texttt{Flask}. Cały proces przetwarzania danych i wnioskowania analitycznego odbywa się w głównym pliku \texttt{app.py}.
+
+Poniżej przedstawiono fragment kodu odpowiedzialny za inicjalizację obiektu wektoryzującego oraz wyuczenie modelu TF-IDF na tekstowej reprezentacji cech gier wczytanych z pliku \texttt{games.json}.
+
+\begin{lstlisting}[language=Python, caption=Definicja i wyuczenie modelu TF-IDF, label=lst:tfidf]
+from sklearn.feature_extraction.text import TfidfVectorizer
+import pandas as pd
+
+tfidf = TfidfVectorizer(token_pattern=r'(?u)\b\w+\b', stop_words='english')
+
+if not df_games.empty:
+    tfidf_matrix = tfidf.fit_transform(df_games['features'])
+    print("Model ML gotowy!")
+\end{lstlisting}
+
+Po wygenerowaniu globalnej macierzy cech system przechodzi w tryb nasłuchiwania zapytań. Gdy użytkownik wprowadzi swój identyfikator \texttt{steam\_id}, aplikacja odpytuje zewnętrzne API platformy Steam w celu pobrania listy posiadanych gier oraz czasu w nich spędzonego.
+
+Na podstawie uzyskanych danych system filtruje do 10 najdłużej ogrywanych tytułów. Wektory odpowiadające tym grom są lokalizowane w wcześniej przygotowanej macierzy \texttt{tfidf\_matrix}, a następnie obliczana jest ich średnia arytmetyczna. Otrzymany w ten sposób uśredniony wektor (\texttt{user\_profile}) reprezentuje wielowymiarowy profil preferencji gracza.
+
+Kolejnym krokiem jest ewaluacja całego zbioru gier względem wyliczonego profilu. Realizowane jest to poprzez zoptymalizowaną funkcję podobieństwa kosinusowego z biblioteki \texttt{scikit-learn}.
+
+\begin{lstlisting}[language=Python, caption=Budowa profilu użytkownika i obliczenie podobieństwa, label=lst:cosine]
+from sklearn.metrics.pairwise import cosine_similarity
+import numpy as np
+
+user_indices = df_games[df_games['appid'].isin(top_appids)].index
+
+user_profile = np.asarray(tfidf_matrix[user_indices].mean(axis=0))
+
+similarities = cosine_similarity(user_profile, tfidf_matrix).flatten()
+similar_indices_cosine = similarities.argsort()[::-1]
+\end{lstlisting}
+
+Otrzymana po sortowaniu tablica \texttt{similar\_indices\_cosine} zawiera indeksy wszystkich gier z bazy uszeregowane od najlepiej do najgorzej dopasowanych. 
+
+Ostatnim etapem w potoku (ang. \textit{pipeline}) uczenia maszynowego zaimplementowanego w systemie jest iteracyjne odfiltrowanie tych tytułów, których identyfikatory znajdują się już w bibliotece gracza. Ponadto system równolegle wykonuje obliczenia dla wariantu opartego na indeksie Jaccarda, przekształcając listy tagów na zbiory (ang. \textit{sets}) i wyliczając stosunek ich części wspólnej do sumy, a finalne top 6 rekomendacji z obu algorytmów przekazywane jest na frontend.
+
+% --- ROZDZIAŁ 6 ---
+\section{Podsumowanie i Wnioski}
+Projekt zakończył się sukcesem, udowadniając skuteczność modeli przetwarzania języka naturalnego (NLP/TF-IDF) zaimplementowanych do metadanych jako bazy dla systemu rekomendacji. Podejście \textit{Content-Based Filtering} okazało się optymalne – zarówno z perspektywy wydajności, jak i omijania problemu "zimnego startu".
+
+Przyszłe prace nad systemem mogłyby obejmować stworzenie rozwiązania hybrydowego, które połączy aktualny model TF-IDF z filtrowaniem opartym na recenzjach graczy (\textit{Collaborative Filtering}), wymagającym już jednak użycia bardziej zaawansowanych struktur Big Data.
+
+
+\end{document}
